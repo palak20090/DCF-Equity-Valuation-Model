@@ -1,34 +1,64 @@
-# Automated Discounted Cash Flow (DCF) & Valuation Engine
+# DCF Equity Valuation Model
 
-An automated, data-driven equity valuation engine that bypasses traditional spreadsheet constraints to model intrinsic corporate value. This system programmatically extracts data from the `yfinance` API, processes operational trends through a weighted-moving-average pipeline, applies dynamic discounting conventions, and reverse-engineers market sentiment using numerical root-finding algorithms.
+## Introduction
+
+Valuing a company is a fundamental part of equity research and investment analysis. Among the various valuation techniques, the **Discounted Cash Flow (DCF)** model is one of the most widely used methods for estimating a company's intrinsic value by forecasting its future cash flows and discounting them to their present value.
+
+The **DCF Equity Valuation Model** is a Python-based application that automates this valuation process using publicly available financial data obtained through the **Yahoo Finance API (`yfinance`)**. Instead of manually building a spreadsheet model, users can estimate the intrinsic value of any supported publicly traded company directly from the command line by providing its ticker symbol.
+
+The model retrieves historical financial statements and market information, projects revenue over a five-year forecast period, estimates operating income, taxes, depreciation, capital expenditure, and working capital requirements, and computes projected **Free Cash Flows (FCF)**. These cash flows are discounted using the **Weighted Average Cost of Capital (WACC)**, while the terminal value is estimated using the **Gordon Growth Model** to determine the company's enterprise value, equity value, and intrinsic share price.
+
+In addition to estimating intrinsic value, the model calculates the **Margin of Safety**, allowing users to compare the estimated fair value with the current market price. It also estimates the **implied revenue growth rate** using the **bisection method**, providing insight into the market's embedded growth expectations.
+
+This project demonstrates the practical implementation of a complete DCF valuation pipeline in Python by combining financial statement analysis, valuation principles, and numerical optimization into a single automated workflow.
 
 ---
 
-## Core Financial Framework
+# Features
 
-### Decayed Weighting Matrix
+* Automated retrieval of financial statements and market data using `yfinance`
+* Five-year revenue forecasting
+* Weighted historical operating margin estimation
+* Free Cash Flow (FCF) forecasting
+* WACC estimation using the Capital Asset Pricing Model (CAPM)
+* Mid-year discounting convention
+* Terminal value estimation using the Gordon Growth Model
+* Enterprise value and intrinsic share price calculation
+* Margin of Safety analysis
+* Implied revenue growth estimation using the bisection method
+* Command-line interface for company valuation
 
-Historical metrics (EBIT, D&A, CapEx, and Working Capital margins) are scaled using a decaying factor array:
+---
+
+# Project Structure
 
 ```text
-[0.4, 0.3, 0.2, 0.1]
+.
+├── DCFModel.py
+├── EV_EBITDA by Industry.csv
+├── requirements.txt
+└── README.md
 ```
-
-This prioritizes recent macroeconomic environments and operational adjustments while minimizing historical noise.
-
-### Mid-Year Discounting Convention
-
-Cash flows assume mid-period distribution (`t = 0.5, 1.5, ...`) rather than restrictive year-end cliffs, neutralizing structural under-valuation and aligning with continuous corporate cash generation.
-
-### Implied Growth Optimization
-
-Features a custom root-finding algorithm that solves for the exact revenue growth rate implied by the asset's current market price.
 
 ---
 
-# Technical Setup & Dependencies
+# Additional Data
 
-Install the required libraries:
+The repository includes **EV_EBITDA by Industry.csv**, containing industry EV/EBITDA multiples. While the current implementation estimates terminal value using the Gordon Growth Model, this dataset can be used for future extensions involving exit multiple valuation.
+
+---
+
+# Requirements
+
+* Python 3.x
+
+Install the required dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+or
 
 ```bash
 pip install numpy pandas yfinance
@@ -36,44 +66,46 @@ pip install numpy pandas yfinance
 
 ---
 
-# Command Line Interface (CLI)
+# Usage
 
-Execute valuations directly from the terminal.
+Run the model from the terminal.
 
 ```bash
-python main.py --ticker SYMBOL [--TGR RATE] [--riskfree SYMBOL] [--market SYMBOL]
+python DCFModel.py --ticker SYMBOL
 ```
 
----
-
-# Example Usage
-
-## Standard Valuation
+### Example
 
 ```bash
-python main.py --ticker KO
+python DCFModel.py --ticker KO
 ```
 
-## Advanced Configuration
+### Custom Terminal Growth Rate
 
 ```bash
-python main.py --ticker NVDA --TGR 0.02 --riskfree ^FVX --market VT
+python DCFModel.py --ticker MSFT --TGR 0.025
+```
+
+### Custom Market Assumptions
+
+```bash
+python DCFModel.py --ticker NVDA --TGR 0.02 --riskfree ^FVX --market VT
 ```
 
 ---
 
 # Command-Line Arguments
 
-| Argument     | Variable                | Description                   | Default      |
-| ------------ | ----------------------- | ----------------------------- | ------------ |
-| `--ticker`   | `stock_symbol`          | Public equity ticker to value | **Required** |
-| `--TGR`      | `perpetual_growth_rate` | Terminal growth rate          | `0.03`       |
-| `--riskfree` | `risk_free_asset`       | Risk-free benchmark           | `^TNX`       |
-| `--market`   | `market_index`          | Market benchmark for ERP      | `VTI`        |
+| Argument     | Description                      | Default      |
+| ------------ | -------------------------------- | ------------ |
+| `--ticker`   | Stock ticker symbol              | **Required** |
+| `--TGR`      | Terminal (Perpetual) Growth Rate | `0.03`       |
+| `--riskfree` | Risk-free rate benchmark         | `^TNX`       |
+| `--market`   | Market benchmark                 | `VTI`        |
 
 ---
 
-# Example Output
+# Sample Output
 
 ```text
 Implied Stock Price: 76.18
@@ -85,206 +117,204 @@ Implied Growth Rate: 2.87%
 
 ---
 
-# Financial Methodology
+# Methodology
 
-## 1. Unlevered Free Cash Flow (FCF)
+## Revenue Projection
 
-The engine estimates enterprise cash generation using:
+Historical revenue is obtained from the company's income statement. The model initializes the forecast using the latest revenue estimate available on Yahoo Finance and compounds it using the expected one-year revenue growth rate.
 
-[
-\text{NOPAT} = \text{EBIT}\times(1-\tau)
-]
+Historical operating margins are estimated using weighted averages, assigning greater importance to recent financial performance.
 
-[
-\text{FCF}=\text{NOPAT}+D&A-\text{CapEx}-\Delta NWC
-]
+Historical weighting scheme:
 
-```python
-def _compute_free_cash_flows(self):
-    return (
-        self.nopat
-        + self.forecasted_da
-        - self.forecasted_capex
-        - self.forecasted_nwc_change
-    )
+```text
+[0.4, 0.3, 0.2, 0.1]
 ```
 
 ---
 
-## 2. Weighted Average Cost of Capital (WACC)
+## Operating Income (EBIT)
 
-[
-\text{WACC}
-===========
+Projected EBIT is estimated by applying the weighted historical EBIT margin to forecasted revenue.
 
-\left(
-\frac{D}{D+E}
-\times
-R_d
-\times
-(1-\tau)
-\right)
+```math
+EBIT_t = Revenue_t \times EBIT\ Margin
+```
+
+---
+
+## Net Operating Profit After Tax (NOPAT)
+
+Projected taxes are estimated using the weighted historical effective tax rate.
+
+```math
+NOPAT = EBIT \times (1 - Tax\ Rate)
+```
+
+---
+
+## Free Cash Flow (FCF)
+
+Free Cash Flow represents the cash generated after accounting for operating expenses, capital expenditure, and changes in working capital.
+
+```math
+FCF =
+NOPAT
 +
-\left(
-\frac{E}{D+E}
-\times
-R_e
-\right)
-]
+Depreciation\ \&\ Amortization
+-
+Capital\ Expenditure
+-
+Change\ in\ Working\ Capital
+```
+
+---
+
+## Weighted Average Cost of Capital (WACC)
+
+The Weighted Average Cost of Capital represents the average cost of financing from debt and equity and serves as the discount rate for projected cash flows.
+
+```math
+WACC=
+\frac{D}{D+E}R_d(1-\tau)+
+\frac{E}{D+E}R_e
+```
 
 where
 
+* **D** = Total Debt
+* **E** = Market Capitalization
+* **Rd** = Cost of Debt
+* **Re** = Cost of Equity
+
 ### Cost of Debt
 
-[
-R_d=\frac{\text{Interest Expense}}{\text{Total Debt}}
-]
+```math
+R_d=
+\frac{Interest\ Expense}{Total\ Debt}
+```
 
 ### Cost of Equity (CAPM)
 
-[
-R_e
-===
-
-R_f
-+
-\beta
-\left(
-R_m-R_f
-\right)
-]
-
-```python
-def _compute_wacc(self):
-    debt_weight = self.total_debt / (self.total_debt + self.market_cap)
-    equity_weight = self.market_cap / (self.total_debt + self.market_cap)
-
-    cost_of_debt = self.interest_expense / self.total_debt
-    cost_of_equity = (
-        self.risk_free_rate
-        + self.equity_beta
-        * (self.market_return_rate - self.risk_free_rate)
-    )
-
-    return (
-        debt_weight * cost_of_debt * (1 - self.effective_tax_rate)
-        + equity_weight * cost_of_equity
-    )
+```math
+R_e=
+R_f+\beta(R_m-R_f)
 ```
+
+The model uses:
+
+* **^TNX** as the default risk-free rate.
+* **VTI** as the default market benchmark.
 
 ---
 
-## 3. Present Value Engine
+## Enterprise Value
 
-Enterprise value is calculated as:
+Projected Free Cash Flows are discounted using a **mid-year discounting convention**, assuming cash flows are generated throughout the year.
 
-[
-\text{EV}
-=========
-
+```math
+EV=
 \sum_{t=1}^{5}
-\frac{\text{FCF}_t}
-{(1+\text{WACC})^{t-0.5}}
+\frac{FCF_t}
+{(1+WACC)^{t-0.5}}
 +
-\frac{\text{Terminal Value}}
-{(1+\text{WACC})^5}
-]
-
-```python
-def _discount_cash_flows(self):
-
-    discounted_fcfs = sum(
-        pd.Series(
-            (
-                fcf /
-                ((1 + self.wacc_rate) ** (0.5 + i))
-            )
-            for i, fcf in enumerate(self.forecasted_fcf)
-        )
-    )
-
-    discounted_tv = (
-        self.estimated_terminal_value
-        /
-        ((1 + self.wacc_rate) ** 5)
-    )
-
-    return discounted_fcfs + discounted_tv
+\frac{TV}
+{(1+WACC)^5}
 ```
 
 ---
 
-## 4. Terminal Value
+## Terminal Value
 
-The perpetual growth model estimates continuing value:
+The model estimates terminal value using the **Gordon Growth Model**.
 
-[
-\text{Terminal Value}
-=====================
+```math
+TV=
+\frac{FCF_5(1+g)}
+{WACC-g}
+```
 
-\frac{\text{FCF}_5(1+g)}
-{\text{WACC}-g}
-]
+where
 
-### Alternative Terminal Value Approaches
-
-Depending on the industry, different methodologies may be more appropriate.
-
-* **EBITDA / EBIT Multiples**
-
-  * Industrials
-  * Utilities
-  * Real Estate
-  * Asset-heavy businesses
-
-* **Revenue Multiples**
-
-  * SaaS
-  * Early-stage technology
-  * High-growth businesses with temporarily low profitability
+* **g** = Perpetual growth rate.
 
 ---
 
-## 5. Implied Growth Rate Solver
+## Equity Value
 
-Rather than assuming a fixed growth rate, the engine numerically solves for the revenue growth embedded in the current market price using a bisection algorithm.
+Enterprise Value is converted into Equity Value by accounting for outstanding debt and available cash.
 
-```python
-def find_implied_growth_rate(
-    self,
-    tolerance=0.01,
-    max_iterations=100
-):
+```math
+Equity\ Value
+=
+Enterprise\ Value
+-
+Total\ Debt
++
+Cash
+```
 
-    lower_bound = -0.5
-    upper_bound = 0.5
+The intrinsic share price is then calculated as
 
-    for _ in range(max_iterations):
-
-        mid_point = (lower_bound + upper_bound) / 2
-
-        calculated_price = eval_price_at_growth(mid_point)
-
-        ...
+```math
+Intrinsic\ Share\ Price=
+\frac{Equity\ Value}
+{Shares\ Outstanding}
 ```
 
 ---
 
-# Features
+## Margin of Safety
 
-* Automated financial statement extraction using `yfinance`
-* Five-year DCF forecasting engine
-* Weighted historical operating margin estimation
+```math
+Margin\ of\ Safety=
+\frac
+{Intrinsic\ Price-Market\ Price}
+{Market\ Price}
+```
+
+A positive Margin of Safety indicates that the estimated intrinsic value exceeds the current market price, while a negative value indicates potential overvaluation.
+
+---
+
+## Implied Revenue Growth
+
+Rather than assuming a fixed growth rate, the model estimates the revenue growth implied by the current market price using the **bisection method**. The projected growth rate is iteratively adjusted until the calculated intrinsic share price converges to the observed market price within a specified tolerance.
+
+---
+
+# Model Assumptions
+
+* Five-year explicit forecast period
+* Revenue initialized using Yahoo Finance revenue estimates
+* Weighted historical operating margins
 * Mid-year discounting convention
-* Dynamic WACC estimation
-* CAPM-based cost of equity
-* Terminal value estimation
-* Margin of safety calculation
-* Market-implied revenue growth solver
-* Command-line interface for flexible valuation workflows
+* CAPM used to estimate the cost of equity
+* Historical interest expense used to estimate the cost of debt
+* Gordon Growth Model used for terminal value estimation
+
+---
+
+# Technologies Used
+
+* Python
+* NumPy
+* Pandas
+* yfinance
+* argparse
+
+---
+
+# References
+
+* Yahoo Finance (`yfinance`) – Financial statements and market data
+* Investopedia – Discounted Cash Flow (DCF)
+* Investopedia – Weighted Average Cost of Capital (WACC)
+* Investopedia – Capital Asset Pricing Model (CAPM)
+* NYU Stern – Enterprise Value Multiples by Industry
 
 ---
 
 # Disclaimer
 
-This project is intended solely for educational, research, and financial modeling purposes. It does not constitute investment advice or a recommendation to buy or sell securities. Users should independently verify all financial data against official company filings before making investment decisions.
+This project is intended for educational and research purposes only. It should not be considered financial or investment advice. Financial data obtained through Yahoo Finance may contain inaccuracies or delays. Users should independently verify all information using official company filings before making investment decisions.
